@@ -164,7 +164,7 @@ def frame_selector_ui(summary):
     return selected_frame_index, selected_frame
 
 # Select frames based on the selection in the sidebar
-@st.cache_data(hash_funcs={np.ufunc: str})
+@st.cache(hash_funcs={np.ufunc: str})
 def get_selected_frames(summary, label, min_elts, max_elts):
     return summary[np.logical_and(summary[label] >= min_elts, summary[label] <= max_elts)].index
 
@@ -215,7 +215,7 @@ def load_image(url):
 # Run the YOLO model to detect objects.
 def yolo_v3(image, confidence_threshold, overlap_threshold):
     # Load the network. Because this is cached it will only happen once.
-    @st.cache_data(allow_output_mutation=True)
+    @st.cache(allow_output_mutation=True)
     def load_network(config_path, weights_path):
         net = cv2.dnn.readNetFromDarknet(config_path, weights_path)
         output_layer_names = net.getLayerNames()
