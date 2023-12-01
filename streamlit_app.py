@@ -164,7 +164,7 @@ def frame_selector_ui(summary):
     return selected_frame_index, selected_frame
 
 # Select frames based on the selection in the sidebar
-@st.cache(hash_funcs={np.ufunc: str})
+@st.cache_resources(hash_funcs={np.ufunc: str})
 def get_selected_frames(summary, label, min_elts, max_elts):
     return summary[np.logical_and(summary[label] >= min_elts, summary[label] <= max_elts)].index
 
@@ -196,7 +196,7 @@ def draw_image_with_boxes(image, boxes, header, description):
     st.image(image_with_boxes.astype(np.uint8), use_column_width=True)
 
 # Download a single file and make its content available as a string.
-@st.cache_resource(show_spinner=False)
+@st.cache_resources(show_spinner=False)
 def get_file_content_as_string(path):
     url = 'https://raw.githubusercontent.com/streamlit/demo-self-driving/master/' + path
     response = urllib.request.urlopen(url)
@@ -215,7 +215,7 @@ def load_image(url):
 # Run the YOLO model to detect objects.
 def yolo_v3(image, confidence_threshold, overlap_threshold):
     # Load the network. Because this is cached it will only happen once.
-    @st.cache_data(allow_output_mutation=True)
+    @st.cache_resources(allow_output_mutation=True)
     def load_network(config_path, weights_path):
         net = cv2.dnn.readNetFromDarknet(config_path, weights_path)
         output_layer_names = net.getLayerNames()
