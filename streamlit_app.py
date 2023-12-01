@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This demo lets you explore the Udacity self-driving car image dataset.
+# This demo lets you to explore the Udacity self-driving car image dataset.
 # More info: https://github.com/streamlit/demo-self-driving
 
 import streamlit as st
@@ -45,7 +45,6 @@ def main():
         run_the_app()
 
 # This file downloader demonstrates Streamlit animation.
-@st.cache_resource(show_spinner=False)
 def download_file(file_path):
     # Don't download the file twice. (If possible, verify the download using the file length.)
     if os.path.exists(file_path):
@@ -87,12 +86,12 @@ def download_file(file_path):
 def run_the_app():
     # To make Streamlit fast, st.cache allows us to reuse computation across runs.
     # In this common pattern, we download data from an endpoint only once.
-    @st.cache_data(show_spinner=False)
+    @st.cache_data
     def load_metadata(url):
         return pd.read_csv(url)
 
     # This function uses some Pandas magic to summarize the metadata Dataframe.
-    @st.cache_data(show_spinner=False)
+    @st.cache_data
     def create_summary(metadata):
         one_hot_encoded = pd.get_dummies(metadata[["frame", "label"]], columns=["label"])
         summary = one_hot_encoded.groupby(["frame"]).sum().rename(columns={
@@ -115,8 +114,8 @@ def run_the_app():
 
     # Draw the UI elements to search for objects (pedestrians, cars, etc.)
     selected_frame_index, selected_frame = frame_selector_ui(summary)
-    if selected_frame_index is None:
-        st.error("No frames fit the criteria. Please select a different label or number.")
+    if selected_frame_index == None:
+        st.error("No frames fit the criteria. Please select different label or number.")
         return
 
     # Draw the UI element to select parameters for the YOLO object detector.
@@ -143,7 +142,7 @@ def frame_selector_ui(summary):
     # The user can pick which type of object to search for.
     object_type = st.sidebar.selectbox("Search for which objects?", summary.columns, 2)
 
-    # The user can select a range for how many of the selected object should be present.
+    # The user can select a range for how many of the selected objecgt should be present.
     min_elts, max_elts = st.sidebar.slider("How many %ss (select a range)?" % object_type, 0, 25, [10, 20])
     selected_frames = get_selected_frames(summary, object_type, min_elts, max_elts)
     if len(selected_frames) < 1:
@@ -158,18 +157,16 @@ def frame_selector_ui(summary):
         alt.X("index:Q", scale=alt.Scale(nice=False)),
         alt.Y("%s:Q" % object_type))
     selected_frame_df = pd.DataFrame({"selected_frame": [selected_frame_index]})
-    vline = alt.Chart(selected_frame_df).mark_rule(color="red").encode(x="selected_frame")
+    vline = alt.Chart(selected_frame_df).mark_rule(color="red").encode(x = "selected_frame")
     st.sidebar.altair_chart(alt.layer(chart, vline))
 
     selected_frame = selected_frames[selected_frame_index]
     return selected_frame_index, selected_frame
 
 # Select frames based on the selection in the sidebar
-@st.cache_data(hash_funcs={np.ufunc: str})
+@st.cache(hash_funcs={np.ufunc: str})
 def get_selected_frames(summary, label, min_elts, max_elts):
-    return summary[
-        np.logical_and(summary[label] >= min_elts, summary[label] <= max_elts)
-    ].index
+    return summary[np.logical_and(summary[label] >= min_elts, summary[label] <= max_elts)].index
 
 # This sidebar UI lets the user select parameters for the YOLO object detector.
 def object_detector_ui():
@@ -190,8 +187,8 @@ def draw_image_with_boxes(image, boxes, header, description):
     }
     image_with_boxes = image.astype(np.float64)
     for _, (xmin, ymin, xmax, ymax, label) in boxes.iterrows():
-        image_with_boxes[int(ymin):int(ymax), int(xmin):int(xmax), :] += LABEL_COLORS[label]
-        image_with_boxes[int(ymin):int(ymax), int(xmin):int(xmax), :] /= 2
+        image_with_boxes[int(ymin):int(ymax),int(xmin):int(xmax),:] += LABEL_COLORS[label]
+        image_with_boxes[int(ymin):int(ymax),int(xmin):int(xmax),:] /= 2
 
     # Draw the header and image.
     st.subheader(header)
@@ -207,25 +204,31 @@ def get_file_content_as_string(path):
 
 # This function loads an image from Streamlit public repo on S3. We use st.cache on this
 # function as well, so we can reuse the images across runs.
-@st.cache_data(show_spinner=False)
+@st.experimental_memo(show_spinner=False)
 def load_image(url):
     with urllib.request.urlopen(url) as response:
         image = np.asarray(bytearray(response.read()), dtype="uint8")
     image = cv2.imdecode(image, cv2.IMREAD_COLOR)
-    image = image[:, :, [2, 1, 0]]  # BGR -> RGB
+    image = image[:, :, [2, 1, 0]] # BGR -> RGB
     return image
 
 # Run the YOLO model to detect objects.
-@st.cache_data(allow_output_mutation=True)
 def yolo_v3(image, confidence_threshold, overlap_threshold):
+    # Load the network. Because this is cached it will only happen once.
+    @st.cache(allow_output_mutation=True)
+    def load_network(config_path, weights_path):
+        net = cv2.dnn.readNetFromDarknet(config_path, weights_path)
+        output_layer_names = net.getLayerNames()
+        output_layer_names = [output_layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+        return net, output_layer_names
     net, output_layer_names = load_network("yolov3.cfg", "yolov3.weights")
 
-    blob = cv2.dnn.blobFromImage(
-        image, 1 / 255.0, (416, 416), swapRB=True, crop=False
-    )
+    # Run the YOLO neural net.
+    blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416), swapRB=True, crop=False)
     net.setInput(blob)
     layer_outputs = net.forward(output_layer_names)
 
+    # Supress detections in case of too low confidence or too much overlap.
     boxes, confidences, class_IDs = [], [], []
     H, W = image.shape[:2]
     for output in layer_outputs:
@@ -242,33 +245,34 @@ def yolo_v3(image, confidence_threshold, overlap_threshold):
                 class_IDs.append(classID)
     indices = cv2.dnn.NMSBoxes(boxes, confidences, confidence_threshold, overlap_threshold)
 
+    # Map from YOLO labels to Udacity labels.
     UDACITY_LABELS = {
-        0: "pedestrian",
-        1: "biker",
-        2: "car",
-        3: "biker",
-        5: "truck",
-        7: "truck",
-        9: "trafficLight",
+        0: 'pedestrian',
+        1: 'biker',
+        2: 'car',
+        3: 'biker',
+        5: 'truck',
+        7: 'truck',
+        9: 'trafficLight'
     }
     xmin, xmax, ymin, ymax, labels = [], [], [], [], []
     if len(indices) > 0:
+        # loop over the indexes we are keeping
         for i in indices.flatten():
             label = UDACITY_LABELS.get(class_IDs[i], None)
             if label is None:
                 continue
 
+            # extract the bounding box coordinates
             x, y, w, h = boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3]
 
             xmin.append(x)
             ymin.append(y)
-            xmax.append(x + w)
-            ymax.append(y + h)
+            xmax.append(x+w)
+            ymax.append(y+h)
             labels.append(label)
 
-    boxes = pd.DataFrame(
-        {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels}
-    )
+    boxes = pd.DataFrame({"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "labels": labels})
     return boxes[["xmin", "ymin", "xmax", "ymax", "labels"]]
 
 # Path to the Streamlit public S3 bucket
